@@ -1,4 +1,5 @@
 *.h5f
+*.swp
 env/*
 
 # Byte-compiled / optimized / DLL files

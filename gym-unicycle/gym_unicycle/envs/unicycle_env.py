@@ -76,7 +76,17 @@ class UnicycleEnv(gym.Env):
             np.finfo(np.float32).max])
 
         #self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32) # float from -1 to 1
-        self.action_space = spaces.Discrete(2)
+        # left, nothing, right
+        
+        # action | meaning
+        # 0      | left
+        # 1      | nothing
+        # 2      | right
+        self.action_space_size = 7 # number of choices
+        self.action_offset = self.action_space_size / 2.0
+        self.action_space = spaces.Discrete(self.action_space_size)
+        assert(self.normalize_action(0) == -1)
+        assert(self.normalize_action(self.action_space_size) == 1)
 
         self.observation_space = spaces.Box(-high, high, dtype=np.float32)
 
@@ -86,6 +96,14 @@ class UnicycleEnv(gym.Env):
 
         self.steps_beyond_done = None
 
+    # I want to have actions from -1 to 1
+    # but for some reason it does 0 to self.action_space_size 
+    # so I need to map 0..action_space_size to -1..1
+    def normalize_action(self,action):
+        shifted = action - self.action_offset
+        scaled = shifted / (self.action_space_size / 2.0)
+        return(scaled)
+
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
@@ -94,7 +112,7 @@ class UnicycleEnv(gym.Env):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         state = self.state
         x, x_dot, theta, theta_dot = state
-        force = action * self.force_mag
+        force = self.normalize_action(action) * self.force_mag
         costheta = math.cos(theta)
         sintheta = math.sin(theta)
         temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
