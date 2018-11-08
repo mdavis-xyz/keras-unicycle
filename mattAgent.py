@@ -16,7 +16,7 @@ import os.path
 register(
     id='MATTENV-v0',
     entry_point='gym_unicycle.envs:UnicycleEnv',
-    max_episode_steps=200,
+    max_episode_steps=2000,
     reward_threshold=195.0,
 )
 

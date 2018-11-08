@@ -70,7 +70,7 @@ class UnicycleEnv(gym.Env):
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation is still within bounds
         high = np.array([
-            self.x_threshold * 2,
+            self.x_threshold * 4,
             np.finfo(np.float32).max,
             self.theta_threshold_radians * 2,
             np.finfo(np.float32).max])
@@ -155,7 +155,7 @@ class UnicycleEnv(gym.Env):
         return np.array(self.state)
 
     def render(self, mode='human'):
-        screen_width = 600
+        screen_width = 1200
         screen_height = 400
 
         world_width = self.x_threshold*2
@@ -163,22 +163,45 @@ class UnicycleEnv(gym.Env):
         carty = 100 # TOP OF CART
         polewidth = 10.0
         polelen = scale * (2 * self.length)
-        cartwidth = 50.0
-        cartheight = 30.0
+        #cartwidth = 50.0
+        #cartheight = 30.0
+        wheel_diameter = scale * 0.5 
+        wheel_circumference = wheel_diameter * math.pi
+        wheel_radius = wheel_diameter / 2.0
+        crank_len = wheel_radius * 0.7
+        pedal_width = scale * 0.15
+        pedal_thick = scale * 0.03
+        floor_y = 30.0
 
         if self.viewer is None:
             from gym.envs.classic_control import rendering
             self.viewer = rendering.Viewer(screen_width, screen_height)
-            l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
-            axleoffset =cartheight/4.0
-            cart = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            #l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
+            #cart = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+            cart = self.viewer.draw_circle(wheel_diameter/2.0,filled=False)
             self.carttrans = rendering.Transform()
             cart.add_attr(self.carttrans)
             self.viewer.add_geom(cart)
+
+            
+            # pedals
+            self.pedal_trans = {}
+            self.pedals = {}
+            for p in range(2):
+                l,r,t,b = -pedal_width/2, pedal_width/2, pedal_thick/2, -pedal_thick/2
+                pedal = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+                self.pedals[p] = pedal
+                self.pedal_trans[p] = rendering.Transform()
+                pedal.add_attr(self.pedal_trans[p])
+                #pedal.add_attr(self.carttrans)
+                pedal.set_color(.3,.4,.5)
+                self.viewer.add_geom(self.pedals[p])
+
+            # seatpost
             l,r,t,b = -polewidth/2,polewidth/2,polelen-polewidth/2,-polewidth/2
             pole = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
             pole.set_color(.8,.6,.4)
-            self.poletrans = rendering.Transform(translation=(0, axleoffset))
+            self.poletrans = rendering.Transform()
             pole.add_attr(self.poletrans)
             pole.add_attr(self.carttrans)
             self.viewer.add_geom(pole)
@@ -187,7 +210,7 @@ class UnicycleEnv(gym.Env):
             self.axle.add_attr(self.carttrans)
             self.axle.set_color(.5,.5,.8)
             self.viewer.add_geom(self.axle)
-            self.track = rendering.Line((0,carty), (screen_width,carty))
+            self.track = rendering.Line((0,floor_y), (screen_width,floor_y))
             self.track.set_color(0,0,0)
             self.viewer.add_geom(self.track)
 
@@ -202,7 +225,15 @@ class UnicycleEnv(gym.Env):
 
         x = self.state
         cartx = x[0]*scale+screen_width/2.0 # MIDDLE OF CART
-        self.carttrans.set_translation(cartx, carty)
+        self.carttrans.set_translation(cartx, wheel_radius+floor_y)
+
+        # pedals
+        x_rotations = x[0]*scale / wheel_circumference
+        wheel_angle = 2 * math.pi * x_rotations * -1 
+        for (p,m) in enumerate([-1,1]):
+           pedal_x = m*math.cos(wheel_angle)*crank_len
+           pedal_y = m*math.sin(wheel_angle)*crank_len
+           self.pedal_trans[p].set_translation(pedal_x+cartx,pedal_y+floor_y+wheel_radius)
         self.poletrans.set_rotation(-x[2])
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
