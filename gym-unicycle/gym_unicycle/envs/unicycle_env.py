@@ -9,6 +9,8 @@ import gym
 from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
+
+import random
 import time
 
 class UnicycleEnv(gym.Env):
@@ -61,7 +63,7 @@ class UnicycleEnv(gym.Env):
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # actually half the pole's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = 2.0 # originally 10
+        self.force_mag = 12.0 # originally 10
         self.tau = 0.02  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
@@ -72,11 +74,12 @@ class UnicycleEnv(gym.Env):
 
         # Angle at which to fail the episode
         self.theta_threshold_radians = 45 * 2 * math.pi / 360
-        self.x_threshold = 2.4
+        self.x_threshold = 2.4 # TODO: correct for angle
+        self.wa_threshold = self.xToWheelAngle(self.x_threshold)
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation is still within bounds
         high = np.array([
-            self.x_threshold * 4,
+            self.wa_threshold * 4,
             np.finfo(np.float32).max,
             self.theta_threshold_radians * 2,
             np.finfo(np.float32).max,
@@ -190,6 +193,7 @@ class UnicycleEnv(gym.Env):
 
     def reset(self):
         self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(6,))
+        self.state[0] += random.uniform(-math.pi/2.0,math.pi/2.0)
         self.state[4] = math.cos(self.state[0])
         self.state[5] = math.sin(self.state[0])
         #self.state[1] = 0 # no horizontal velocity
@@ -201,7 +205,7 @@ class UnicycleEnv(gym.Env):
         screen_width = 1200
         screen_height = 400
 
-        world_width = self.x_threshold*2
+        world_width = self.x_threshold*2+self.wheel_diameter
         scale = screen_width/world_width
         carty = 100 # TOP OF CART
         polewidth = 10.0
