@@ -9,6 +9,7 @@ import gym
 from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
+import time
 
 class UnicycleEnv(gym.Env):
     """
@@ -20,17 +21,17 @@ class UnicycleEnv(gym.Env):
 
     Observation: 
         Type: Box(4)
-        Num	Observation                 Min         Max
-        0	Cart Position             -4.8            4.8
-        1	Cart Velocity             -Inf            Inf
-        2	Pole Angle                 -24°           24°
-        3	Pole Velocity At Tip      -Inf            Inf
+        Num     Observation                 Min         Max
+        0       Cart Position             -4.8            4.8
+        1       Cart Velocity             -Inf            Inf
+        2       Pole Angle                 -24°           24°
+        3       Pole Velocity At Tip      -Inf            Inf
         
     Actions:
         Type: Discrete(2)
-        Num	Action
-        0	Push cart to the left
-        1	Push cart to the right
+        Num     Action
+        0       Push cart to the left
+        1       Push cart to the right
         
         Note: The amount the velocity is reduced or increased is not fixed as it depends on the angle the pole is pointing. This is because the center of gravity of the pole increases the amount of energy needed to move the cart underneath it
 
@@ -50,7 +51,7 @@ class UnicycleEnv(gym.Env):
     
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second' : 50
+        'video.frames_per_second' : 25 
     }
 
     def __init__(self):
@@ -60,12 +61,17 @@ class UnicycleEnv(gym.Env):
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # actually half the pole's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = 10.0
+        self.force_mag = 2.0 # originally 10
         self.tau = 0.02  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
+
+        self.wheel_diameter = 0.5 
+        self.wheel_circumference = self.wheel_diameter * math.pi
+        self.wheel_radius = self.wheel_diameter / 2.0
+
         # Angle at which to fail the episode
-        self.theta_threshold_radians = 12 * 2 * math.pi / 360
+        self.theta_threshold_radians = 45 * 2 * math.pi / 360
         self.x_threshold = 2.4
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation is still within bounds
@@ -73,16 +79,19 @@ class UnicycleEnv(gym.Env):
             self.x_threshold * 4,
             np.finfo(np.float32).max,
             self.theta_threshold_radians * 2,
-            np.finfo(np.float32).max])
+            np.finfo(np.float32).max,
+            float("inf"), # cos(wheel angle)
+            float("inf")  # sin(wheel angle)
+            ])
 
         #self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32) # float from -1 to 1
         # left, nothing, right
         
         # action | meaning
-        # 0      | left
+        # 0      | push down pedal A
         # 1      | nothing
-        # 2      | right
-        self.action_space_size = 7 # number of choices
+        # 2      | push down pedal B
+        self.action_space_size = 3 # number of choices
         self.action_offset = self.action_space_size / 2.0
         self.action_space = spaces.Discrete(self.action_space_size)
         assert(self.normalize_action(0) == -1)
@@ -95,6 +104,15 @@ class UnicycleEnv(gym.Env):
         self.state = None
 
         self.steps_beyond_done = None
+
+    def xToWheelAngle(self,x):
+        return(x / self.wheel_radius)
+
+    # in radians
+    # 0 radians means pedals vertical
+    def wheelAngleToX(self,angle):
+        return(angle * self.wheel_radius)
+
 
     # I want to have actions from -1 to 1
     # but for some reason it does 0 to self.action_space_size 
@@ -111,8 +129,21 @@ class UnicycleEnv(gym.Env):
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         state = self.state
-        x, x_dot, theta, theta_dot = state
-        force = self.normalize_action(action) * self.force_mag
+        x = self.wheelAngleToX(state[0])
+        x_dot = self.wheelAngleToX(state[1])
+        theta = state[2] # seat post angle
+        theta_dot = state[3] 
+
+        # if angle == 0, pedal is at bottom/top, so no torque, so no horizontal force
+        # if angle == 90 degrees, maximum torque, so maximum horizontal force
+        if action == 0: # push down pedal A
+            force = math.sin(self.state[0]) * self.normalize_action(action) * self.force_mag
+        if action == 1: # no pushing
+            force = 0
+        else: # push down pedal B
+            force = -math.sin(self.state[0]) * self.normalize_action(action) * self.force_mag
+        self.last_action = action # for rendering
+        #force = self.normalize_action(action) * self.force_mag
         costheta = math.cos(theta)
         sintheta = math.sin(theta)
         temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
@@ -128,7 +159,9 @@ class UnicycleEnv(gym.Env):
             x  = x + self.tau * x_dot
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
-        self.state = (x,x_dot,theta,theta_dot)
+        wa = self.xToWheelAngle(x)
+        wa_dot = self.xToWheelAngle(x_dot)
+        self.state = (wa,wa_dot,theta,theta_dot,math.cos(wa),math.sin(wa))
         done =  x < -self.x_threshold \
                 or x > self.x_threshold \
                 or theta < -self.theta_threshold_radians \
@@ -137,6 +170,12 @@ class UnicycleEnv(gym.Env):
 
         if not done:
             reward = 1.0
+
+            # slight reward for staying in center
+            # 0.5 if in center
+            # 0 at edge
+            # linear (TODO: make non-linear)
+            reward += (self.x_threshold - abs(x) )/ float(self.x_threshold*2.0)
         elif self.steps_beyond_done is None:
             # Pole just fell!
             self.steps_beyond_done = 0
@@ -150,8 +189,12 @@ class UnicycleEnv(gym.Env):
         return np.array(self.state), reward, done, {}
 
     def reset(self):
-        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
+        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(6,))
+        self.state[4] = math.cos(self.state[0])
+        self.state[5] = math.sin(self.state[0])
+        #self.state[1] = 0 # no horizontal velocity
         self.steps_beyond_done = None
+        self.last_action = None
         return np.array(self.state)
 
     def render(self, mode='human'):
@@ -165,20 +208,23 @@ class UnicycleEnv(gym.Env):
         polelen = scale * (2 * self.length)
         #cartwidth = 50.0
         #cartheight = 30.0
-        wheel_diameter = scale * 0.5 
-        wheel_circumference = wheel_diameter * math.pi
-        wheel_radius = wheel_diameter / 2.0
-        crank_len = wheel_radius * 0.7
+        wheel_radius_dr = self.wheel_radius * scale
+        wheel_diameter_dr = self.wheel_diameter * scale
+        wheel_circumference_dr = self.wheel_circumference * scale
+        crank_len = wheel_radius_dr * 0.7
         pedal_width = scale * 0.15
         pedal_thick = scale * 0.03
         floor_y = 30.0
+
+        pedal_inactive_col = lambda pedal: pedal.set_color(.3,.4,.5)
+        pedal_active_col = lambda pedal: pedal.set_color(.8,.0,.5)
 
         if self.viewer is None:
             from gym.envs.classic_control import rendering
             self.viewer = rendering.Viewer(screen_width, screen_height)
             #l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
             #cart = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-            cart = self.viewer.draw_circle(wheel_diameter/2.0,filled=False)
+            cart = self.viewer.draw_circle(wheel_diameter_dr/2.0,filled=False)
             self.carttrans = rendering.Transform()
             cart.add_attr(self.carttrans)
             self.viewer.add_geom(cart)
@@ -186,16 +232,24 @@ class UnicycleEnv(gym.Env):
             
             # pedals
             self.pedal_trans = {}
-            self.pedals = {}
-            for p in range(2):
+            self.pedals = {
+                'A': {
+                    'trans':rendering.Transform(),
+                    'action':0,
+                    'multiplier':1
+                },
+                'B': {
+                    'trans':rendering.Transform(),
+                    'action':2,
+                    'multiplier':-1
+                }
+            }
+            for p in self.pedals:
                 l,r,t,b = -pedal_width/2, pedal_width/2, pedal_thick/2, -pedal_thick/2
-                pedal = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-                self.pedals[p] = pedal
-                self.pedal_trans[p] = rendering.Transform()
-                pedal.add_attr(self.pedal_trans[p])
-                #pedal.add_attr(self.carttrans)
-                pedal.set_color(.3,.4,.5)
-                self.viewer.add_geom(self.pedals[p])
+                self.pedals[p]['pedal'] = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
+                self.pedals[p]['pedal'].add_attr(self.pedals[p]['trans'])
+                pedal_inactive_col(self.pedals[p]['pedal'])
+                self.viewer.add_geom(self.pedals[p]['pedal'])
 
             # seatpost
             l,r,t,b = -polewidth/2,polewidth/2,polelen-polewidth/2,-polewidth/2
@@ -225,18 +279,25 @@ class UnicycleEnv(gym.Env):
 
         x = self.state
         cartx = x[0]*scale+screen_width/2.0 # MIDDLE OF CART
-        self.carttrans.set_translation(cartx, wheel_radius+floor_y)
+        self.carttrans.set_translation(cartx, wheel_radius_dr+floor_y)
 
         # pedals
-        x_rotations = x[0]*scale / wheel_circumference
-        wheel_angle = 2 * math.pi * x_rotations * -1 
-        for (p,m) in enumerate([-1,1]):
-           pedal_x = m*math.cos(wheel_angle)*crank_len
-           pedal_y = m*math.sin(wheel_angle)*crank_len
-           self.pedal_trans[p].set_translation(pedal_x+cartx,pedal_y+floor_y+wheel_radius)
+        for p in self.pedals:
+           # 0 radians means pedals vertical
+           # and wheelAngle()==0 means wheel A at top
+           # increasing state[0] means wheel turns clockwise
+           m = self.pedals[p]['multiplier']
+           pedal_x = m*math.sin(self.state[0])*crank_len
+           pedal_y = m*math.cos(self.state[0])*crank_len
+           self.pedals[p]['trans'].set_translation(pedal_x+cartx,pedal_y+floor_y+wheel_radius_dr)
+           if self.last_action == self.pedals[p]['action']:
+               pedal_active_col(self.pedals[p]['pedal'])
+           else:
+               pedal_inactive_col(self.pedals[p]['pedal'])
         self.poletrans.set_rotation(-x[2])
-
-        return self.viewer.render(return_rgb_array = mode=='rgb_array')
+        if mode == 'human':
+            time.sleep(1.0 / self.metadata['video.frames_per_second'])
+        return self.viewer.render(return_rgb_array = False)
 
     def close(self):
         if self.viewer:

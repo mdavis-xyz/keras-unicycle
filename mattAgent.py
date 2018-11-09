@@ -13,21 +13,23 @@ from gym.envs.registration import registry, register, make, spec
 import gym_unicycle
 import os.path
 
+ENV_NAME = 'MATTENV-v0'
 register(
-    id='MATTENV-v0',
+    id=ENV_NAME,
     entry_point='gym_unicycle.envs:UnicycleEnv',
     max_episode_steps=2000,
-    reward_threshold=195.0,
+    reward_threshold=800.0,
 )
 
 
-ENV_NAME = 'MATTENV-v0'
 
 # Get the environment and extract the number of actions.
 env = gym.make(ENV_NAME)
 np.random.seed(123)
 env.seed(123)
 nb_actions = env.action_space.n
+
+print("env.observation_space.shape: " + str(env.observation_space.shape))
 
 # Next, we build a very simple model.
 model = Sequential()
