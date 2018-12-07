@@ -68,11 +68,11 @@ class UnicycleEnv(gym.Env):
 
     def __init__(self):
         self.gravity = 9.8 # m/s/s
-        self.wheel_mass = 1 # kg of wheel set
-        self.sp_mass = 0 # kg of seat post
-        self.total_mass = (self.sp_mass + self.wheel_mass)
-        self.sp_halflength = 0.5 # meters, actually half the sp's length
-        self.spmass_length = (self.sp_mass * self.sp_halflength)
+        self.masscart = 1 # kg of wheel set
+        self.masspole = 0 # kg of seat post
+        self.total_mass = (self.masspole + self.masscart)
+        self.length = 0.5 # meters, actually half the sp's length
+        self.polemass_length = (self.masspole * self.length)
         self.force_mag = self.gravity * 10 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
@@ -89,7 +89,7 @@ class UnicycleEnv(gym.Env):
         self.wheel_speed_thresh = self.gravity * 4 * math.pi * 2 / self.wheel_circumference # the wheel speed corresponding to a 3 second freefall
 
         # width of the world
-        self.world_width = (self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + 2*self.wheel_radius
+        self.world_width = abs((self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + 2*self.wheel_radius)
 
         # Angle limit set to 2 * sp_angle_thresh so failing observation is still within bounds
         self.limits = np.array([
@@ -139,56 +139,48 @@ class UnicycleEnv(gym.Env):
 
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        state_unnorm = self.state * self.limits # un-normalize
-        wheel_angle = state_unnorm[0] # wheel angle
-        x = wheel_angle / (2 * math.pi) * self.wheel_circumference # meters horizontally
-        wheel_speed = state_unnorm[1]# wheel speed
-        x_dot = wheel_angle / (2 * math.pi) * self.wheel_circumference # m/s
-        # ignore sin(wheel_speed)
-        # ignore cos(wheel_speed)
-        sp_angle = state_unnorm[4]# seat post angle
-        sp_angle_vel = state_unnorm[5]# seat post velocity
-
-
         self.last_action = action # for rendering
-
-        # maths time
-        force = self.action_to_force(action) # N pushing wheel to the right
-
-        cos_sp = math.cos(sp_angle)
-        sin_sp = math.sin(sp_angle)
-        temp = (force + self.spmass_length * sp_angle_vel * sp_angle_vel * sin_sp) / self.total_mass
-        sp_ang_acc = (self.gravity * sin_sp - cos_sp* temp) / (self.sp_halflength * (4.0/3.0 - self.sp_mass * cos_sp * cos_sp / self.total_mass))
-        xacc  = temp - self.spmass_length * sp_ang_acc * cos_sp / self.total_mass
+        state = self.state * self.limits
+        x = self.wheel_circumference * state[0] / (2*math.pi)
+        x_dot = self.wheel_circumference * state[1] / (2*math.pi)
+        theta = state[4]
+        theta_dot = state[5]
+        if action == 0:
+            force = -1 * self.force_mag
+        elif action == 1:
+            force = 0
+        else:
+            force = 1 * self.force_mag
+        costheta = math.cos(theta)
+        sintheta = math.sin(theta)
+        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
+        thetaacc = (self.gravity * sintheta - costheta* temp) / (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
+        xacc  = temp - self.polemass_length * thetaacc * costheta / self.total_mass
         if self.kinematics_integrator == 'euler':
             x  = x + self.tau * x_dot
             x_dot = x_dot + self.tau * xacc
-            sp_angle = sp_angle + self.tau * sp_angle_vel
-            sp_angle_vel = sp_angle_vel + self.tau * sp_ang_acc
+            theta = theta + self.tau * theta_dot
+            theta_dot = theta_dot + self.tau * thetaacc
         else: # semi-implicit euler
             x_dot = x_dot + self.tau * xacc
             x  = x + self.tau * x_dot
-            sp_angle_vel = sp_angle_vel + self.tau * sp_ang_acc
-            sp_angle = sp_angle + self.tau * sp_angle_vel
-        wheel_angle = math.pi * 2 * x / self.wheel_circumference #radians
-        wheel_speed = math.pi * 2 * x_dot / self.wheel_circumference # radians per second
+            theta_dot = theta_dot + self.tau * thetaacc
+            theta = theta + self.tau * theta_dot
+        wheel_angle = 2*math.pi * x / self.wheel_circumference
+        wheel_angle_dot = 2*math.pi * x / self.wheel_circumference
+        self.state = (wheel_angle,
+                      wheel_angle_dot,
+                      math.sin(wheel_angle),
+                      math.cos(wheel_angle),
+                      theta,
+                      theta_dot
+                      ) / self.limits
 
-        # TODO: normalize
-        new_state_unnorm = np.array([
-                wheel_angle,
-                wheel_speed,
-                math.sin(wheel_angle),
-                math.cos(wheel_angle),
-                sp_angle,
-                sp_angle_vel
-                ], dtype=np.float32
-               )
         done =  False #(np.absolute(new_state_unnorm) > self.limits).any()
-        new_state_norm = new_state_unnorm / self.limits
-        self.state = new_state_norm
-        if done:
-            if abs(new_state_unnorm[4]) < 1:
-                print("Failing dimension not sp angle: " + str(new_state_norm >= 1))
+
+        # if done:
+        #     if abs(new_state_unnorm[4]) < 1:
+        #         print("Failing dimension not sp angle: " + str(new_state_norm >= 1))
 
         if not done:
             reward = 1.0 # staying up is most important
@@ -258,7 +250,7 @@ class UnicycleEnv(gym.Env):
         scale = screen_width/self.world_width
         carty = 100 # TOP OF CART
         spwidth = 10.0
-        splen = scale * (2 * self.sp_halflength)
+        splen = scale * (2 * self.length)
         #cartwidth = 50.0
         #cartheight = 30.0
         wheel_radius_dr = self.wheel_radius * scale
