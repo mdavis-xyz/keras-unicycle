@@ -3,3 +3,6 @@ gym
 Pillow
 keras-rl
 tensorflow
+websockets
+asyncio
+Flask

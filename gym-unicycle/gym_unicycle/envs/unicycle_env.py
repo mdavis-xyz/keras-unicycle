@@ -11,6 +11,11 @@ import numpy as np
 import random
 import time
 
+from flask import Flask
+from flask import request
+import json
+
+
 class UnicycleEnv(gym.Env):
     """
     Description:
@@ -66,11 +71,12 @@ class UnicycleEnv(gym.Env):
     """
 
     metadata = {
-        'render.modes': ['human', 'rgb_array'],
+        'render.modes': ['flask', 'rgb_array'],
         'video.frames_per_second' : 25
     }
 
     def __init__(self):
+
         self.gravity = 9.8 # m/s/s
         self.masscart = 1 # kg of wheel set
         self.masspole = 0.7 #0.7 # kg of seat post
@@ -131,6 +137,30 @@ class UnicycleEnv(gym.Env):
         self.state = None
 
         self.steps_beyond_done = None
+
+
+        if self.metadata['render.modes'][0] == 'flask':
+            app = Flask(__name__)
+
+            @app.route("/params", methods=["GET"])
+            def params():
+                payload = {
+                    "width": self.world_width,
+                    "action_space_size": self.action_space_size
+                }
+                return(json.dumps(payload))
+
+            @app.route("/frame", methods=["GET"])
+            def frame():
+                payload = {
+                    'wheel_angle': self.state[0] * self.limits[0],
+                    'seatpost_angle': self.state[4] * self.limits[4],
+                    'action': self.last_action
+                }
+                return(json.dumps(payload))
+
+            if __name__ == "__main__":
+                app.run(port=5002)
 
 
     def seed(self, seed=None):
@@ -205,12 +235,12 @@ class UnicycleEnv(gym.Env):
             # 0 at edge
             # linear (TODO: make non-linear)
             x_norm = self.state[0] # -1 to 1
-            reward += 1 * (1 - abs(x_norm))
+            reward += 0.5 * (1 - abs(x_norm))
 
             # slight penalty for having wheel velocity high
             # relu penalty
             x_dot_norm = self.state[1] # -1 to 1
-            x_dot_penalty_thresh = 0.4
+            x_dot_penalty_thresh = 0.5
             if x_dot_norm > x_dot_penalty_thresh:
                 print("horizontal speed too high, penalizing")
                 reward -= 0.2 * (abs(x_dot_norm) - x_dot_penalty_thresh) / (1-x_dot_penalty_thresh)
@@ -375,6 +405,7 @@ class UnicycleEnv(gym.Env):
         self.sptrans.set_rotation(-state_unnorm[4])
         if mode == 'human':
             time.sleep(1.0 / self.metadata['video.frames_per_second'])
+
         return self.viewer.render(return_rgb_array = False)
 
     def close(self):
