@@ -23,7 +23,7 @@ class RandomAgent(object):
         self.action_space = action_space
 
     def act(self, observation, reward, done):
-        return 2 # self.action_space.sample()
+        return 4 # self.action_space.sample()
 
 if __name__ == '__main__':
 

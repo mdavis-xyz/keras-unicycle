@@ -69,11 +69,11 @@ class UnicycleEnv(gym.Env):
     def __init__(self):
         self.gravity = 9.8 # m/s/s
         self.masscart = 1 # kg of wheel set
-        self.masspole = 0.7 # kg of seat post
+        self.masspole = 0.7 #0.7 # kg of seat post
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # meters, actually half the sp's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = self.gravity * 0.3 * self.total_mass # Newtons, twice the weight of the system
+        self.force_mag = self.gravity * 0.7 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
@@ -89,7 +89,7 @@ class UnicycleEnv(gym.Env):
         self.wheel_speed_thresh = self.gravity * 4 * math.pi * 2 / self.wheel_circumference # the wheel speed corresponding to a 3 second freefall
 
         # width of the world
-        self.world_width = abs((self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + 2*self.wheel_radius)
+        self.world_width = abs((2*self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + 2*self.wheel_radius)
 
         # Angle limit set to 2 * sp_angle_thresh so failing observation is still within bounds
         self.limits = np.array([
@@ -105,9 +105,12 @@ class UnicycleEnv(gym.Env):
         # 0      | push down left pedal
         # 1      | nothing
         # 2      | push down right pedal
-        self.action_space_size = 3 # number of choices
-        self.action_offset = self.action_space_size / 2.0
+        self.action_space_size = 7 # number of choices
+        self.action_offset = (self.action_space_size-1) / 2.0
         self.action_space = spaces.Discrete(self.action_space_size)
+
+        assert(self.normalize_action(0) == -1)
+        assert(self.normalize_action(self.action_space_size-1) == 1)
 
         self.high = self.limits / self.limits # normalized limits
         self.observation_space = spaces.Box(-self.high, self.high, dtype=np.float32)
@@ -123,18 +126,20 @@ class UnicycleEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+    def normalize_action(self,action):
+        shifted =  (action - self.action_offset)
+        scaled = shifted / ((self.action_space_size-1)/2.0)
+        return(scaled)
+
     # takes in an action
     # returns the horizontal force in Netwons exerted from ground to wheel, towards the left?
     def action_to_force(self,action):
         # if wheel angle == 0, pedals are at bottom/top, so no torque, so no horizontal force
         # if wheel angle == 90 degrees, maximum torque, so maximum horizontal force
         wheel_angle = self.state[0]*self.limits[0] # un-normalize to radians
-        if action == 0: # push down left pedal
-            force = math.sin(wheel_angle) * self.force_mag
-        if action == 1: # no pushing
-            force = 0
-        else: # push down right pedal
-            force = -math.sin(wheel_angle) * self.force_mag
+
+        force = -math.sin(wheel_angle) * self.force_mag * self.normalize_action(action)
+
         return(force)
 
     def step(self, action):
@@ -172,14 +177,15 @@ class UnicycleEnv(gym.Env):
                       theta_dot
                       ) / self.limits
 
-        done = False #  (np.absolute(self.state) > self.limits).any()
+        done = (np.absolute(self.state) > self.limits).any()
+        # done = False
 
         # if done:
         #     if abs(new_state_unnorm[4]) < 1:
         #         print("Failing dimension not sp angle: " + str(new_state_norm >= 1))
 
         if not done:
-            reward = 1.0 # staying up is most important
+            reward = 2.0 # staying up is most important
 
             # slight reward for staying in center
             # 0.5 if in center
@@ -240,7 +246,7 @@ class UnicycleEnv(gym.Env):
 
     def render(self, mode='human'):
         ratio = self.world_width / (self.length * 2+ self.wheel_radius)
-        screen_width = 800
+        screen_width = 1500
         screen_height = int(screen_width / ratio + 50)
 
 
@@ -277,13 +283,13 @@ class UnicycleEnv(gym.Env):
             self.pedals = {
                 'left': {
                     'trans':rendering.Transform(),
-                    'action':0,
-                    'multiplier':1
+                    'actions':[x for x in range(self.action_space_size) if x > self.action_offset],
+                    'multiplier':-1
                 },
                 'right': {
                     'trans':rendering.Transform(),
-                    'action':2,
-                    'multiplier':-1
+                    'actions':[x for x in range(self.action_space_size) if x < self.action_offset],
+                    'multiplier':1
                 }
             }
             for p in self.pedals:
@@ -335,11 +341,11 @@ class UnicycleEnv(gym.Env):
            pedal_x = m*math.sin(state_unnorm[0])*crank_len
            pedal_y = m*math.cos(state_unnorm[0])*crank_len
            self.pedals[p]['trans'].set_translation(pedal_x+x_dr,pedal_y+floor_y+wheel_radius_dr)
-           if self.last_action == self.pedals[p]['action']:
+           if self.last_action in self.pedals[p]['actions']:
                pedal_active_col(self.pedals[p]['pedal'])
            else:
                pedal_inactive_col(self.pedals[p]['pedal'])
-        self.sptrans.set_rotation(state_unnorm[4])
+        self.sptrans.set_rotation(-state_unnorm[4])
         if mode == 'human':
             time.sleep(1.0 / self.metadata['video.frames_per_second'])
         return self.viewer.render(return_rgb_array = False)
