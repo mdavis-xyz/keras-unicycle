@@ -38,6 +38,10 @@ class UnicycleEnv(gym.Env):
                 which is 'forward' from the unicycle rider's perspective
         5   sp angular velocity
                 measured in radians/sec
+        6   previous action
+                There's a penalty for changing action (to avoid inhuman jittering)
+        7   number of steps on current action
+                There's a penalty for changing action frequently (to avoid inhuman jittering)
 
     Actions:
         Type: Discrete(2) # TODO: make continuous
@@ -91,6 +95,9 @@ class UnicycleEnv(gym.Env):
         # width of the world
         self.world_width = 2*abs((self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + self.wheel_radius)
 
+        # try to reward not changing actions more frequently than this
+        self.action_memory = int(0.3 / self.tau) # seconds
+
         self.action_space_size = 7 # number of choices
 
         # Angle limit set to 2 * sp_angle_thresh so failing observation is still within bounds
@@ -101,7 +108,8 @@ class UnicycleEnv(gym.Env):
                 1, # cos(wheel_speed)
                 self.sp_angle_thresh, # seat post angle
                 self.sp_speed_thresh, # seat post velocity
-                self.action_space_size
+                self.action_space_size, # previous action
+                self.action_memory # number of steps doing previous action
             ], dtype=np.float32)
 
         # action | meaning
@@ -178,7 +186,8 @@ class UnicycleEnv(gym.Env):
                       math.cos(wheel_angle),
                       theta,
                       theta_dot,
-                      self.last_action
+                      self.last_action,
+                      self.state[7] # update later in this function
                       ) / self.limits
 
         done = (np.absolute(self.state) > 1).any()
@@ -189,7 +198,7 @@ class UnicycleEnv(gym.Env):
         #         print("Failing dimension not sp angle: " + str(new_state_norm >= 1))
 
         if not done:
-            reward = 2.0 # staying up is most important
+            reward = 3.0 # staying up is most important
 
             # slight reward for staying in center
             # 0.5 if in center
@@ -217,8 +226,12 @@ class UnicycleEnv(gym.Env):
                 # or seat is falling back while moving back
                 reward -= 0.1 *  (1 - abs(sp_angle_vel_norm))
 
+            # to avoid frequent changes of action
             reward -= abs(action - self.last_action) * 1.0 / self.action_space_size
 
+            # if we are changing action
+            if (self.state[7] <= self.action_memory) and (action != self.last_action):
+                reward -= 0.2 * (self.action_memory - self.state[7]) / self.action_memory
 
         elif self.steps_beyond_done is None:
             # sp just fell!
@@ -230,6 +243,10 @@ class UnicycleEnv(gym.Env):
             self.steps_beyond_done += 1
             reward = 0.0
 
+        if action == self.last_action:
+            state[7] = min(self.action_memory,+1)
+        else:
+            state[7] = 0
         self.last_action = action
         return np.array(self.state), reward, done, {}
 
@@ -246,7 +263,8 @@ class UnicycleEnv(gym.Env):
             math.cos(wheel_angle),
             sp_angle,
             sp_angle_vel_temp,
-            self.last_action
+            self.last_action,
+            0 # duration of current action
         ], dtype=np.float32) / self.limits
 
         self.steps_beyond_done = None
