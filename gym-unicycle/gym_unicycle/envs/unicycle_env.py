@@ -69,11 +69,11 @@ class UnicycleEnv(gym.Env):
     def __init__(self):
         self.gravity = 9.8 # m/s/s
         self.masscart = 1 # kg of wheel set
-        self.masspole = 0 # kg of seat post
+        self.masspole = 0.7 # kg of seat post
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # meters, actually half the sp's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = self.gravity * 0.2 * self.total_mass # Newtons, twice the weight of the system
+        self.force_mag = self.gravity * 0.3 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
@@ -130,11 +130,11 @@ class UnicycleEnv(gym.Env):
         # if wheel angle == 90 degrees, maximum torque, so maximum horizontal force
         wheel_angle = self.state[0]*self.limits[0] # un-normalize to radians
         if action == 0: # push down left pedal
-            force = -math.sin(wheel_angle) * self.force_mag
+            force = math.sin(wheel_angle) * self.force_mag
         if action == 1: # no pushing
             force = 0
         else: # push down right pedal
-            force = math.sin(wheel_angle) * self.force_mag
+            force = -math.sin(wheel_angle) * self.force_mag
         return(force)
 
     def step(self, action):
@@ -145,12 +145,8 @@ class UnicycleEnv(gym.Env):
         x_dot = self.wheel_circumference * state[1] / (2*math.pi) # convert rad/s to m/s
         theta = state[4]
         theta_dot = state[5]
-        if action == 0:
-            force = -1 * self.force_mag
-        elif action == 1:
-            force = 0
-        else:
-            force = 1 * self.force_mag
+        force = self.action_to_force(action)
+
         costheta = math.cos(theta)
         sintheta = math.sin(theta)
         temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
@@ -176,7 +172,7 @@ class UnicycleEnv(gym.Env):
                       theta_dot
                       ) / self.limits
 
-        done =  False #(np.absolute(new_state_unnorm) > self.limits).any()
+        done = False #  (np.absolute(self.state) > self.limits).any()
 
         # if done:
         #     if abs(new_state_unnorm[4]) < 1:
@@ -243,8 +239,9 @@ class UnicycleEnv(gym.Env):
         return np.array(self.state)
 
     def render(self, mode='human'):
-        screen_width = 1000
-        screen_height = 500
+        ratio = self.world_width / (self.length * 2+ self.wheel_radius)
+        screen_width = 800
+        screen_height = int(screen_width / ratio + 50)
 
 
         scale = screen_width/self.world_width
