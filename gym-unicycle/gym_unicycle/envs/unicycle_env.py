@@ -73,23 +73,25 @@ class UnicycleEnv(gym.Env):
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # meters, actually half the sp's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = self.gravity * 0.7 * self.total_mass # Newtons, twice the weight of the system
+        self.force_mag = self.gravity * 2 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
 
         self.wheel_diameter = 0.4 # meters
-        self.wheel_circumference = self.wheel_diameter * math.pi # meters
         self.wheel_radius = self.wheel_diameter / 2.0 # meters
+        self.wheel_circumference = 2.0 * math.pi * self.wheel_radius # meters
 
         # Thresholds at which to fail the episode
         self.sp_angle_thresh = math.pi  * 0.4 # radians, seat post
         self.sp_speed_thresh = self.gravity * 3 * math.pi * 2 / self.wheel_circumference # the wheel speed corresponding to a 3 second freefall
-        self.wheel_angle_thresh = 3.5 * math.pi # radians, wheel
+        self.wheel_angle_thresh = 3 * math.pi # radians, wheel
         self.wheel_speed_thresh = self.gravity * 4 * math.pi * 2 / self.wheel_circumference # the wheel speed corresponding to a 3 second freefall
 
         # width of the world
-        self.world_width = abs((2*self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + 2*self.wheel_radius)
+        self.world_width = 2*abs((self.wheel_angle_thresh * self.wheel_circumference / (2*math.pi)) + self.wheel_radius)
+
+        self.action_space_size = 7 # number of choices
 
         # Angle limit set to 2 * sp_angle_thresh so failing observation is still within bounds
         self.limits = np.array([
@@ -98,14 +100,15 @@ class UnicycleEnv(gym.Env):
                 1, # sin(wheel_speed)
                 1, # cos(wheel_speed)
                 self.sp_angle_thresh, # seat post angle
-                self.sp_speed_thresh # seat post velocity
+                self.sp_speed_thresh, # seat post velocity
+                self.action_space_size
             ], dtype=np.float32)
 
         # action | meaning
         # 0      | push down left pedal
         # 1      | nothing
         # 2      | push down right pedal
-        self.action_space_size = 7 # number of choices
+
         self.action_offset = (self.action_space_size-1) / 2.0
         self.action_space = spaces.Discrete(self.action_space_size)
 
@@ -144,7 +147,7 @@ class UnicycleEnv(gym.Env):
 
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        self.last_action = action # for rendering
+
         state = self.state * self.limits
         x = self.wheel_circumference * state[0] / (2*math.pi) # convert rad to m
         x_dot = self.wheel_circumference * state[1] / (2*math.pi) # convert rad/s to m/s
@@ -174,10 +177,11 @@ class UnicycleEnv(gym.Env):
                       math.sin(wheel_angle),
                       math.cos(wheel_angle),
                       theta,
-                      theta_dot
+                      theta_dot,
+                      self.last_action
                       ) / self.limits
 
-        done = (np.absolute(self.state) > self.limits).any()
+        done = (np.absolute(self.state) > 1).any()
         # done = False
 
         # if done:
@@ -192,7 +196,7 @@ class UnicycleEnv(gym.Env):
             # 0 at edge
             # linear (TODO: make non-linear)
             x_norm = self.state[0] # -1 to 1
-            reward += 0.2 * (1 - abs(x_norm))
+            reward += 1 * (1 - abs(x_norm))
 
             # slight penalty for having wheel velocity high
             # relu penalty
@@ -213,6 +217,8 @@ class UnicycleEnv(gym.Env):
                 # or seat is falling back while moving back
                 reward -= 0.1 *  (1 - abs(sp_angle_vel_norm))
 
+            reward -= abs(action - self.last_action) * 1.0 / self.action_space_size
+
 
         elif self.steps_beyond_done is None:
             # sp just fell!
@@ -224,6 +230,7 @@ class UnicycleEnv(gym.Env):
             self.steps_beyond_done += 1
             reward = 0.0
 
+        self.last_action = action
         return np.array(self.state), reward, done, {}
 
     def reset(self):
@@ -231,23 +238,25 @@ class UnicycleEnv(gym.Env):
         wheel_angle_vel = random.uniform(-math.pi * 2 / 2,math.pi * 2 / 2) * 0 # 1 rotation each 2 seconds
         sp_angle = random.uniform(-math.pi/8.0, math.pi/8.0)
         sp_angle_vel_temp = random.uniform(-math.pi * 2 / 5,math.pi * 2 / 5) * 0 # 1 rotation each 5 seconds
+        self.last_action = self.action_offset
         self.state = np.array([
             wheel_angle,
             wheel_angle_vel,
             math.sin(wheel_angle),
             math.cos(wheel_angle),
             sp_angle,
-            sp_angle_vel_temp
+            sp_angle_vel_temp,
+            self.last_action
         ], dtype=np.float32) / self.limits
 
         self.steps_beyond_done = None
-        self.last_action = None
+
         return np.array(self.state)
 
     def render(self, mode='human'):
-        ratio = self.world_width / (self.length * 2+ self.wheel_radius)
+        ratio =  (self.length * 2+ self.wheel_radius) / self.world_width
         screen_width = 1500
-        screen_height = int(screen_width / ratio + 50)
+        screen_height = max(int(screen_width * ratio + 50),700)
 
 
         scale = screen_width/self.world_width
