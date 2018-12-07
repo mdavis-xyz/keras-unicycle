@@ -375,7 +375,7 @@ class UnicycleEnv(gym.Env):
         self.sptrans.set_rotation(-state_unnorm[4])
         if mode == 'human':
             time.sleep(1.0 / self.metadata['video.frames_per_second'])
-        return self.viewer.render(return_rgb_array = False)
+        return self.viewer.render(return_rgb_array = True)
 
     def close(self):
         if self.viewer:

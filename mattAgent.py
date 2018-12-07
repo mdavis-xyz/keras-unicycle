@@ -11,7 +11,9 @@ from rl.memory import SequentialMemory
 
 from gym.envs.registration import registry, register, make, spec
 import gym_unicycle
+from gym import wrappers
 import os.path
+from time import time
 
 ENV_NAME = 'MATTENV-v0'
 register(
@@ -25,6 +27,7 @@ register(
 
 # Get the environment and extract the number of actions.
 env = gym.make(ENV_NAME)
+env = wrappers.Monitor(env, './videos/' + str(time()) + '/')
 np.random.seed(123)
 env.seed(123)
 nb_actions = env.action_space.n
