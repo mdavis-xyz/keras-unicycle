@@ -69,11 +69,11 @@ class UnicycleEnv(gym.Env):
     def __init__(self):
         self.gravity = 9.8 # m/s/s
         self.wheel_mass = 1 # kg of wheel set
-        self.sp_mass = 1 # kg of seat post
+        self.sp_mass = 0 # kg of seat post
         self.total_mass = (self.sp_mass + self.wheel_mass)
         self.sp_halflength = 0.5 # meters, actually half the sp's length
         self.spmass_length = (self.sp_mass * self.sp_halflength)
-        self.force_mag = self.gravity * 2 * self.total_mass # Newtons, twice the weight of the system
+        self.force_mag = self.gravity * 10 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
@@ -109,7 +109,8 @@ class UnicycleEnv(gym.Env):
         self.action_offset = self.action_space_size / 2.0
         self.action_space = spaces.Discrete(self.action_space_size)
 
-        self.observation_space = spaces.Box(-self.limits, self.limits, dtype=np.float32)
+        self.high = self.limits / self.limits # normalized limits
+        self.observation_space = spaces.Box(-self.high, self.high, dtype=np.float32)
 
         self.seed()
         self.viewer = None
@@ -123,17 +124,17 @@ class UnicycleEnv(gym.Env):
         return [seed]
 
     # takes in an action
-    # returns the horizontal force in Netwons exerted from ground to wheel
+    # returns the horizontal force in Netwons exerted from ground to wheel, towards the left?
     def action_to_force(self,action):
         # if wheel angle == 0, pedals are at bottom/top, so no torque, so no horizontal force
         # if wheel angle == 90 degrees, maximum torque, so maximum horizontal force
-        wheel_angle = self.state[0]*self.limits[0] # radians
+        wheel_angle = self.state[0]*self.limits[0] # un-normalize to radians
         if action == 0: # push down left pedal
-            force = math.sin(wheel_angle) * self.force_mag
+            force = -math.sin(wheel_angle) * self.force_mag
         if action == 1: # no pushing
             force = 0
         else: # push down right pedal
-            force = -math.sin(wheel_angle) * self.force_mag
+            force = math.sin(wheel_angle) * self.force_mag
         return(force)
 
     def step(self, action):
@@ -182,7 +183,7 @@ class UnicycleEnv(gym.Env):
                 sp_angle_vel
                 ], dtype=np.float32
                )
-        done =  (np.absolute(new_state_unnorm) > self.limits).any()
+        done =  False #(np.absolute(new_state_unnorm) > self.limits).any()
         new_state_norm = new_state_unnorm / self.limits
         self.state = new_state_norm
         if done:
@@ -233,9 +234,9 @@ class UnicycleEnv(gym.Env):
 
     def reset(self):
         wheel_angle = random.uniform(-math.pi/2.0,math.pi/2.0)
-        wheel_angle_vel = random.uniform(-math.pi * 2 / 2,math.pi * 2 / 2) # 1 rotation each 2 seconds
+        wheel_angle_vel = random.uniform(-math.pi * 2 / 2,math.pi * 2 / 2) * 0 # 1 rotation each 2 seconds
         sp_angle = random.uniform(-math.pi/8.0, math.pi/8.0)
-        sp_angle_vel_temp = random.uniform(-math.pi * 2 / 5,math.pi * 2 / 5) # 1 rotation each 5 seconds
+        sp_angle_vel_temp = random.uniform(-math.pi * 2 / 5,math.pi * 2 / 5) * 0 # 1 rotation each 5 seconds
         self.state = np.array([
             wheel_angle,
             wheel_angle_vel,
