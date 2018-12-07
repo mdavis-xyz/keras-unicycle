@@ -73,7 +73,7 @@ class UnicycleEnv(gym.Env):
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # meters, actually half the sp's length
         self.polemass_length = (self.masspole * self.length)
-        self.force_mag = self.gravity * 10 * self.total_mass # Newtons, twice the weight of the system
+        self.force_mag = self.gravity * 0.2 * self.total_mass # Newtons, twice the weight of the system
         self.tau = 1.0/self.metadata['video.frames_per_second']  # seconds between state updates
         self.kinematics_integrator = 'euler'
 
@@ -141,8 +141,8 @@ class UnicycleEnv(gym.Env):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         self.last_action = action # for rendering
         state = self.state * self.limits
-        x = self.wheel_circumference * state[0] / (2*math.pi)
-        x_dot = self.wheel_circumference * state[1] / (2*math.pi)
+        x = self.wheel_circumference * state[0] / (2*math.pi) # convert rad to m
+        x_dot = self.wheel_circumference * state[1] / (2*math.pi) # convert rad/s to m/s
         theta = state[4]
         theta_dot = state[5]
         if action == 0:
@@ -167,7 +167,7 @@ class UnicycleEnv(gym.Env):
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
         wheel_angle = 2*math.pi * x / self.wheel_circumference
-        wheel_angle_dot = 2*math.pi * x / self.wheel_circumference
+        wheel_angle_dot = 2*math.pi * x_dot / self.wheel_circumference
         self.state = (wheel_angle,
                       wheel_angle_dot,
                       math.sin(wheel_angle),
