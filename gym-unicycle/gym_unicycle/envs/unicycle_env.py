@@ -72,7 +72,7 @@ class UnicycleEnv(gym.Env):
 
     def __init__(self):
         self.gravity = 9.8 # m/s/s
-        self.masscart = 1 # kg of wheel set
+        self.masscart = 0.5 # kg of wheel set
         self.masspole = 0.7 #0.7 # kg of seat post
         self.total_mass = (self.masspole + self.masscart)
         self.length = 0.5 # meters, actually half the sp's length
@@ -205,7 +205,7 @@ class UnicycleEnv(gym.Env):
             # 0 at edge
             # linear (TODO: make non-linear)
             x_norm = self.state[0] # -1 to 1
-            reward += 1 * (1 - abs(x_norm))
+            reward += 1 * (1 - abs(x_norm)) * (1 - abs(x_norm))
 
             # slight penalty for having wheel velocity high
             # relu penalty

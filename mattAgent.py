@@ -27,7 +27,7 @@ register(
 
 # Get the environment and extract the number of actions.
 env = gym.make(ENV_NAME)
-env = wrappers.Monitor(env, './videos/' + str(time()) + '/')
+env = wrappers.Monitor(env, './videos/' + str(time()) + '/', force=True)
 np.random.seed(123)
 env.seed(123)
 nb_actions = env.action_space.n
@@ -69,4 +69,7 @@ else:
     dqn.save_weights('dqn_{}_weights.h5f'.format(ENV_NAME), overwrite=True)
 
 # Finally, evaluate our algorithm for 5 episodes.
-dqn.test(env, nb_episodes=5, visualize=True)
+env.reset()
+env.close()
+result = dqn.test(env, nb_episodes=5, visualize=True)
+print(result)
