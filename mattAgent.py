@@ -18,6 +18,8 @@ import os.path
 from time import time
 from statistics import mean
 import pprint as pp
+import json
+import sys
 
 ENV_NAME = 'MATTENV-v0'
 register(
@@ -77,9 +79,9 @@ def attempt(args):
     dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory, nb_steps_warmup=100,
                    target_model_update=1e-2, policy=policy)
     dqn.compile(Adam(lr=1e-3), metrics=['mae'])
-    if not os.path.exists('weights'):
-        os.makedirs('weights')
-    weights_fname = 'weights/dqn_%s_%f_%d_%d_weights.h5f' % (ENV_NAME,lr,nb_steps,layerType)
+    if not os.path.exists(args['fnamePrefix']):
+        os.makedirs(args['fnamePrefix'])
+    weights_fname = '%s/weights.h5f' % args['fnamePrefix']
     if os.path.isfile(weights_fname):
         print("Loading weights from before")
         print("Skipping training")
@@ -101,27 +103,42 @@ def attempt(args):
         'reward': mean(result.history['episode_reward']),
         'steps': mean(result.history['nb_steps'])
             }
-    with open(weights_fname.replace('h5f','json'),"w") as f:
-            f.write(result.history)
+    json_fname = args['fnamePrefix'] + '/result.json'
+    with open(json_fname,"w") as f:
+            json.dump(result.history,f)
     return(means) 
 
+def attemptWrap(args):
+
+    if not os.path.exists(args['fnamePrefix']):
+        os.makedirs(args['fnamePrefix'])
+    old_stdout = sys.stdout
+    new_stdout_fname = args['fnamePrefix'] + '/stdout.txt'
+    sys.stdout = open(new_stdout_fname,"w")
+    attempt(args)
+    sys.stdout = old_stdout
+
 def main():
+    if not os.path.exists('results'):
+        os.makedirs('results')
     args = []
     for lr in [5e-3, 2e-3, 1e-3, 5e-4, 1e-4]:
         for nb_steps in [10**x for x in range(4,7)]:
             for activation in ['tanh','relu']:
                 for layerType in range(3):
+                    fname = 'results/%s_%f_%d_%d/' % (ENV_NAME,lr,nb_steps,layerType)
                     arg = {
                         'lr':lr,
                         'nb_steps':nb_steps,
                         'activation':activation,
-                        'layerType':layerType
+                        'layerType':layerType,
+                        'fnamePrefix':fname
                         }
                     args.append(arg)
 
     pp.pprint(args)
     with Pool(6) as p:
-        results = p.map(attempt, args)
+        results = p.map(attemptWrap, args)
     data = [{**a,**r} for (a,r) in zip(args,results)]
     data.sort(key=lambda x: x['steps'])
     pp.pprint(data)
