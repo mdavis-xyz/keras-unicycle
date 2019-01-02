@@ -2,7 +2,7 @@
 
 This project is for training a neural network to ride a sumlation of a unicycle, using reinforcement learning.
 
-![Video of simulated unicycle riding](trained/videos/best.mp4)
+![Video of simulated unicycle riding](trained/videos/best.gif)
 
 I took the cartpole example from [here](https://github.com/keras-rl/keras-rl), and modified to be a unicycle.
 
