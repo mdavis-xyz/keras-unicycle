@@ -273,8 +273,8 @@ class UnicycleEnv(gym.Env):
 
     def render(self, mode='human'):
         ratio =  (self.length * 2+ self.wheel_radius) / self.world_width
-        screen_width = 1200
-        screen_height = max(int(screen_width * ratio + 50),450)
+        screen_width = 1500
+        screen_height = max(int(screen_width * ratio + 50),700)
 
 
         scale = screen_width/self.world_width
