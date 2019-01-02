@@ -13,7 +13,7 @@ from rl.memory import SequentialMemory
 
 from gym.envs.registration import registry, register, make, spec
 import gym_unicycle
-#from gym import wrappers # xvfb-run -s "-screen 0 1400x900x24" python <your_script.py>
+from gym import wrappers # xvfb-run -s "-screen 0 1400x900x24" python <your_script.py>
 import os.path
 from time import time
 from statistics import mean
@@ -25,19 +25,15 @@ ENV_NAME = 'MATTENV-v0'
 register(
     id=ENV_NAME,
     entry_point='gym_unicycle.envs:UnicycleEnv',
-    max_episode_steps=2000,
-    reward_threshold=800.0,
+    max_episode_steps=25*60, # 1 minute @ 25fps
+    reward_threshold=9000.0,
 )
 
 
-def attempt(args):
-    lr = args['lr']
-    nb_steps = args['nb_steps']
-    activation = args['activation']
-    layerType = args['layerType']
+def attempt(lr,nb_steps,layerType,fnamePrefix,activation,exportVid,visualize):
     # Get the environment and extract the number of actions.
     env = gym.make(ENV_NAME)
-    #env = wrappers.Monitor(env, './videos/' + str(time()) + '/', force=True)
+
     np.random.seed(123)
     env.seed(123)
     nb_actions = env.action_space.n
@@ -79,9 +75,9 @@ def attempt(args):
     dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory, nb_steps_warmup=100,
                    target_model_update=1e-2, policy=policy)
     dqn.compile(Adam(lr=1e-3), metrics=['mae'])
-    if not os.path.exists(args['fnamePrefix']):
-        os.makedirs(args['fnamePrefix'])
-    weights_fname = '%s/weights.h5f' % args['fnamePrefix']
+    if not os.path.exists(fnamePrefix):
+        os.makedirs(fnamePrefix)
+    weights_fname = '%s/weights.h5f' % fnamePrefix
     if os.path.isfile(weights_fname):
         print("Loading weights from before")
         print("Skipping training")
@@ -98,15 +94,22 @@ def attempt(args):
     # Finally, evaluate our algorithm for 5 episodes.
     env.reset()
     env.close()
-    result = dqn.test(env, nb_episodes=5, visualize=False)
+    if exportVid:
+        videoFname = fnamePrefix + '/videos/' + str(time())
+        if not os.path.exists(videoFname):
+            os.makedirs(videoFname)
+        env = wrappers.Monitor(env, videoFname, force=True)
+    result = dqn.test(env, nb_episodes=1, visualize=visualize)
+    if exportVid:
+        print("Video saved to %s" % videoFname)
     means = {
         'reward': mean(result.history['episode_reward']),
         'steps': mean(result.history['nb_steps'])
             }
-    json_fname = args['fnamePrefix'] + '/result.json'
+    json_fname = fnamePrefix + '/result.json'
     with open(json_fname,"w") as f:
             json.dump(result.history,f)
-    return(means) 
+    return(means)
 
 def attemptWrap(args):
 
@@ -115,10 +118,26 @@ def attemptWrap(args):
     old_stdout = sys.stdout
     new_stdout_fname = args['fnamePrefix'] + '/stdout.txt'
     sys.stdout = open(new_stdout_fname,"w")
-    attempt(args)
+    lr = args['lr']
+    nb_steps = args['nb_steps']
+    layerType = args['layerType']
+    fnamePrefix = args['fnamePrefix']
+    activation = args['activation']
+    exportVid = False
+    visualize = False
+    result = attempt(lr,nb_steps,layerType,fnamePrefix,activation,exportVid,visualize)
+    if result['reward'] > 1000:
+        exportVid = True
+        result = attempt(lr,nb_steps,layerType,fnamePrefix,activation,exportVid,visualize)
     sys.stdout = old_stdout
+    return(result)
 
-def main():
+def mergeDicts(x,y):
+    z = x.copy()   # start with x's keys and values
+    z.update(y)    # modifies z with y's keys and values & returns None
+    return(z)
+
+def tryAll():
     if not os.path.exists('results'):
         os.makedirs('results')
     args = []
@@ -137,10 +156,23 @@ def main():
                     args.append(arg)
 
     pp.pprint(args)
-    with Pool(6) as p:
+    with Pool(4) as p:
         results = p.map(attemptWrap, args)
-    data = [{**a,**r} for (a,r) in zip(args,results)]
-    data.sort(key=lambda x: x['steps'])
+    pp.pprint(results)
+    data = [mergeDicts(a,r) for (a,r) in zip(args,results)]
+    data.sort(key=lambda x: x['reward'])
     pp.pprint(data)
 
+def main():
+    lr = 5e-4
+    nb_steps = 1000000
+    layerType = 1
+    # fnamePrefix = 'results/%s_%f_%d_%d/' % (ENV_NAME,lr,nb_steps,layerType)
+    fnamePrefix = 'results/best'
+    exportVid = True
+    visualize = True
+    activation = 'tanh'
+    result = attempt(lr,nb_steps,layerType,fnamePrefix,activation,exportVid,visualize)
+
 main()
+# tryAll()
