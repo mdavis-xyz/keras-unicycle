@@ -1,3 +1,9 @@
+# This script is to check the physics of the model
+# myAgent just returns a constant value each time
+# This is useful to make sure the environment works
+# e.g. for UNICYCLE-v0, action 4 means not pushing on the pedals
+# so you should see the unicycle fall over at a normal speed
+
 import argparse
 import sys
 
@@ -8,7 +14,7 @@ from gym.envs.registration import registry, register, make, spec
 import gym_unicycle
 import os.path
 
-ENV_NAME = 'MATTENV-v0'
+ENV_NAME = 'UNICYCLE-v0'
 register(
     id=ENV_NAME,
     entry_point='gym_unicycle.envs:UnicycleEnv',
@@ -17,7 +23,7 @@ register(
 )
 
 
-class RandomAgent(object):
+class myAgent(object):
     """The world's simplest agent!"""
     def __init__(self, action_space):
         self.action_space = action_space
@@ -40,7 +46,7 @@ if __name__ == '__main__':
     outdir = '/tmp/random-agent-results'
     #env = wrappers.Monitor(env, directory=outdir, force=True)
     env.seed(0)
-    agent = RandomAgent(env.action_space)
+    agent = myAgent(env.action_space)
 
     episode_count = 1
     reward = 0

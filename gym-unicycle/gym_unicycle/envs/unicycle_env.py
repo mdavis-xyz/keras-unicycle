@@ -273,13 +273,13 @@ class UnicycleEnv(gym.Env):
 
     def render(self, mode='human'):
         ratio =  (self.length * 2+ self.wheel_radius) / self.world_width
-        screen_width = 1500
-        screen_height = max(int(screen_width * ratio + 50),700)
+        screen_width = 1200
+        screen_height = max(int(screen_width * ratio + 50),450)
 
 
         scale = screen_width/self.world_width
-        carty = 100 # TOP OF CART
-        spwidth = 10.0
+        carty = 0.4 * self.wheel_radius * scale # floor
+        spwidth = scale * (2 * self.length) / 30.0
         splen = scale * (2 * self.length)
         #cartwidth = 50.0
         #cartheight = 30.0
