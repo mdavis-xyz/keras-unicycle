@@ -72,7 +72,7 @@ def attempt(lr,numTrainSteps,fnamePrefix,activation,exportVid,visualize):
     # even the metrics!
     memory = SequentialMemory(limit=100000, window_length=1)
     policy = BoltzmannQPolicy()
-    dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory, numTrainSteps_warmup=100,
+    dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory, nb_steps_warmup=100,
                    target_model_update=1e-2, policy=policy)
     dqn.compile(Adam(lr=lr), metrics=['mae'])
     if not os.path.exists(fnamePrefix):
